@@ -1,0 +1,24 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "StudiomdlImporter",
+	"Description": "An importer for Sutdiomdl Data files with QC scripts supported.",
+	"Category": "Editor",
+	"CreatedBy": "Henry Read",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"EnabledByDefault": true,
+	"CanContainContent": false,
+	"IsBetaVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "StudiomdlImporter",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
+		}
+	]
+}
