@@ -29,12 +29,29 @@ bool FSMDModel::LoadModel(const FString& Filename)
 	if (!bResult)
 		return false;
 
+	ParseFile();
+
 	return true;
+}
+
+inline bool IsLineChar(const TCHAR Ch)
+{
+	return Ch == TEXT('\n') || Ch == TEXT('\r');
+}
+
+inline bool IsSpaceChar(const TCHAR Ch)
+{
+	return Ch == TEXT('\t') || Ch == TEXT(' ');
+}
+
+inline bool IsSpaceOrLineChar(const TCHAR Ch)
+{
+	return IsLineChar(Ch) || IsSpaceChar(Ch);
 }
 
 void SkipToNextValidLine(const TCHAR*& In)
 {
-	while (*In != '\n')
+	while (!IsLineChar(*In))
 	{
 		In++;
 	}
@@ -47,7 +64,7 @@ bool SkipSpaces(const TCHAR*& InOut)
 		if (*InOut == TEXT('\0'))
 			return false;
 
-		if (*InOut != TEXT(' '))
+		if (!IsSpaceChar(*InOut))
 			return true;
 
 		InOut++;
@@ -58,7 +75,7 @@ bool SkipSpaces(const TCHAR*& InOut)
 
 void SkipSpacesAndLine(const TCHAR*& InOut)
 {
-	while (*InOut != '\n' && *InOut != ' ')
+	while (IsSpaceOrLineChar(*InOut))
 	{
 		InOut++;
 	}
@@ -82,7 +99,13 @@ bool IsEndOfContent(const TCHAR* In)
 
 bool MatchToken(const TCHAR* In, const TCHAR* Token)
 {
-	if (FCString::Strcmp(In, Token) == 0)
+	for (; *In && *Token; In++, Token++)
+	{
+		if (*In != *Token)
+			return false;
+	}
+
+	if (IsSpaceOrLineChar(*In))
 		return true;
 
 	return false;
@@ -90,25 +113,41 @@ bool MatchToken(const TCHAR* In, const TCHAR* Token)
 
 bool Advance(const TCHAR*& InOut, int32 Size)
 {
-	while (*InOut != '\0' && Size > 0)
+	while (*InOut != TEXT('\0') && Size > 0)
 	{
 		InOut++;
 		Size--;
 	}
 
-	if (*InOut == '\0' && Size != 0)
+	if (*InOut == TEXT('\0') && Size != 0)
 		return false;
 
 	return true;
 }
 
-bool ParseSignedInteger(const TCHAR*& In, int32& OutVal)
+bool AdvanceToNextSpaceOrLine(const TCHAR*& InOut)
 {
-	const TCHAR* OldPosition = In;
-	if (!SkipSpaces(In))
-		return false;
-	
-	OutVal = FCString::Atoi(OldPosition);
+	while (true)
+	{
+		if (*InOut == '\0')
+			return false;
+
+		if (IsSpaceOrLineChar(*InOut))
+		{
+			return true;
+		}
+
+		InOut++;
+	}
+
+	return false;
+}
+
+bool ParseSignedInteger(const TCHAR*& InOut, int32& OutVal)
+{
+	OutVal = FCString::Atoi(InOut);
+
+	AdvanceToNextSpaceOrLine(InOut);
 
 	return true;
 }
@@ -136,8 +175,10 @@ bool SkipToken(const TCHAR*& InOut)
 		if (*InOut == TEXT('\0'))
 			return false;
 
-		if (*InOut == TEXT('\n') && *InOut == TEXT(' '))
+		if (IsSpaceOrLineChar(*InOut))
 			return true;
+
+		InOut++;
 	}
 
 	return false;
@@ -155,17 +196,25 @@ void FSMDModel::ParseFile()
 		SkipSpacesAndLine(CurrentBuffer);
 		if (IsCommentLine(CurrentBuffer))
 		{
+			SkipToNextValidLine(CurrentBuffer);
 			continue;
+		}
+
+		if (IsEndOfContent(CurrentBuffer))
+		{
+			bValid = false;
+			break;
 		}
 
 		if (MatchToken(CurrentBuffer, TOKEN_VERSION))
 		{
-			if (Advance(CurrentBuffer, FCString::Strlen(TOKEN_VERSION)))
+			if (!Advance(CurrentBuffer, FCString::Strlen(TOKEN_VERSION)))
 			{
 				bValid = false;
 				break;
 			}
 
+			SkipSpaces(CurrentBuffer);
 			int32 VersionNum = 1;
 			if (!ParseSignedInteger(CurrentBuffer, VersionNum))
 			{
@@ -189,22 +238,24 @@ void FSMDModel::ParseFile()
 	while (true)
 	{
 		SkipSpacesAndLine(CurrentBuffer);
-		if (IsCommentLine(CurrentBuffer))
-		{
-			continue;
-		}
 
 		if (IsEndOfContent(CurrentBuffer))
 			break;
 
+		if (IsCommentLine(CurrentBuffer))
+		{
+			SkipToNextValidLine(CurrentBuffer);
+			continue;
+		}
+
 		if (MatchToken(CurrentBuffer, TOKEN_NODES))
 		{
+			AdvanceToNextSpaceOrLine(CurrentBuffer);
 			ParseNodes(CurrentBuffer);
 		}
 		else
 		{
-			if (!SkipToken(CurrentBuffer))
-				break;
+			SkipToNextValidLine(CurrentBuffer);
 		}
 	}
 }
@@ -216,11 +267,15 @@ void FSMDModel::ParseNodes(const TCHAR*& CurrentBuffer)
 		SkipSpacesAndLine(CurrentBuffer);
 		if (IsCommentLine(CurrentBuffer))
 		{
+			SkipToNextValidLine(CurrentBuffer);
 			continue;
 		}
 
 		if (IsEndOfContent(CurrentBuffer))
+		{
+			UE_LOG(LogSMDImporter, Error, TEXT("Unexpected end of file"));
 			break;
+		}
 
 		if (MatchToken(CurrentBuffer, TOKEN_END))
 		{
@@ -239,21 +294,29 @@ void FSMDModel::ParseNodes(const TCHAR*& CurrentBuffer)
 				CurrentBuffer++;
 				const TCHAR* OldBuffer = CurrentBuffer;
 				if (!AdvanceUntilChar(CurrentBuffer, TEXT('\"')))
+				{
+					UE_LOG(LogSMDImporter, Error, TEXT("Mismatch \""));
 					break;
+				}
 
-				Bones.AddUninitialized(1);
-				FSMDBone& Bone =  Bones.Last();
+				FSMDBone Bone;
 				Bone.Name.AppendChars(OldBuffer, (CurrentBuffer - OldBuffer));
-				CurrentBuffer++;
+
+				AdvanceToNextSpaceOrLine(CurrentBuffer);
 
 				if (!SkipSpaces(CurrentBuffer))
+				{
+					UE_LOG(LogSMDImporter, Error, TEXT("Unexpected end of file"));
 					break;
+				}
 
 				int32 ParentIndex;
 				if (!ParseSignedInteger(CurrentBuffer, ParentIndex))
 					break;
 
 				Bone.Parent = ParentIndex;
+
+				Bones.Add(Bone);
 			}
 		}
 	}

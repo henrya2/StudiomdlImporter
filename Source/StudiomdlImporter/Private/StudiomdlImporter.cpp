@@ -26,3 +26,5 @@ void FStudiomdlImporterModule::ShutdownModule()
 #undef LOCTEXT_NAMESPACE
 	
 IMPLEMENT_MODULE(FStudiomdlImporterModule, StudiomdlImporter)
+
+DEFINE_LOG_CATEGORY(LogSMDImporter)
