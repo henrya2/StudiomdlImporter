@@ -3,12 +3,16 @@
 
 #define TOKEN_VERSION TEXT("version")
 #define TOKEN_NODES TEXT("nodes")
+#define TOKEN_SKELETON TEXT("skeleton")
+#define TOKEN_TIME TEXT("time")
 #define TOKEN_END TEXT("end")
 
 #define CALC_TOKEN_SIZE(TOKEN) (sizeof(TOKEN) / sizeof(TCHAR) - 1)
 
 #define TOKEN_VERSION_SIZE CALC_TOKEN_SIZE(TOKEN_VERSION)
 #define TOKEN_NODES_SIZE CALC_TOKEN_SIZE(TOKEN_NODES)
+#define TOKEN_SKELETON_SIZE CALC_TOKEN_SIZE(TOKEN_SKELETON)
+#define TOKEN_TIME_SIZE CALC_TOKEN_SIZE(TOKEN_TIME)
 #define TOKEN_END_SIZE CALC_TOKEN_SIZE(TOKEN_END)
 
 FSMDModel::FSMDModel()
@@ -89,6 +93,14 @@ bool IsCommentLine(const TCHAR* In)
 	return false;
 }
 
+bool IsComment(const TCHAR* In)
+{
+	if (*In == TEXT('#') || *In == TEXT(';'))
+		return true;
+
+	return false;
+}
+
 bool IsEndOfContent(const TCHAR* In)
 {
 	if (*In == TEXT('\0'))
@@ -143,11 +155,47 @@ bool AdvanceToNextSpaceOrLine(const TCHAR*& InOut)
 	return false;
 }
 
+bool AdvanceToNextSpace(const TCHAR*& InOut)
+{
+	while (true)
+	{
+		if (*InOut == '\0')
+			return false;
+
+		if (IsSpaceChar(*InOut))
+		{
+			return true;
+		}
+
+		InOut++;
+	}
+
+	return false;
+}
+
 bool ParseSignedInteger(const TCHAR*& InOut, int32& OutVal)
 {
 	OutVal = FCString::Atoi(InOut);
 
 	AdvanceToNextSpaceOrLine(InOut);
+
+	return true;
+}
+
+bool ParseFloat(const TCHAR*& InOut, float& OutVal)
+{
+	OutVal = FCString::Atof(InOut);
+
+	AdvanceToNextSpaceOrLine(InOut);
+
+	return true;
+}
+
+bool ParseVector(const TCHAR*& InOut, FVector& OutVal)
+{
+	ParseFloat(InOut, OutVal.X);
+	ParseFloat(InOut, OutVal.Y);
+	ParseFloat(InOut, OutVal.Z);
 
 	return true;
 }
@@ -253,6 +301,11 @@ void FSMDModel::ParseFile()
 			AdvanceToNextSpaceOrLine(CurrentBuffer);
 			ParseNodes(CurrentBuffer);
 		}
+		else if (MatchToken(CurrentBuffer, TOKEN_SKELETON))
+		{
+			AdvanceToNextSpaceOrLine(CurrentBuffer);
+			ParseSkeleton(CurrentBuffer);
+		}
 		else
 		{
 			SkipToNextValidLine(CurrentBuffer);
@@ -281,6 +334,12 @@ void FSMDModel::ParseNodes(const TCHAR*& CurrentBuffer)
 		{
 			Advance(CurrentBuffer, TOKEN_END_SIZE);
 			break;
+		}
+
+		if (IsComment(CurrentBuffer))
+		{
+			AdvanceUntilChar(CurrentBuffer, TEXT('\n'));
+			continue;
 		}
 
 		int32 NodeIndex = 0;
@@ -317,6 +376,69 @@ void FSMDModel::ParseNodes(const TCHAR*& CurrentBuffer)
 				Bone.Parent = ParentIndex;
 
 				Bones.Add(Bone);
+			}
+		}
+	}
+}
+
+void FSMDModel::ParseSkeleton(const TCHAR*& CurrentBuffer)
+{
+	while (true)
+	{
+		SkipSpacesAndLine(CurrentBuffer);
+		if (IsCommentLine(CurrentBuffer))
+		{
+			SkipToNextValidLine(CurrentBuffer);
+			continue;
+		}
+
+		if (IsEndOfContent(CurrentBuffer))
+		{
+			UE_LOG(LogSMDImporter, Error, TEXT("Unexpected end of file"));
+			break;
+		}
+
+		if (MatchToken(CurrentBuffer, TOKEN_END))
+		{
+			Advance(CurrentBuffer, TOKEN_END_SIZE);
+			break;
+		}
+
+		if (IsComment(CurrentBuffer))
+		{
+			AdvanceUntilChar(CurrentBuffer, TEXT('\n'));
+			continue;
+		}
+
+		if (MatchToken(CurrentBuffer, TOKEN_TIME))
+		{
+			SkipToNextValidLine(CurrentBuffer);
+
+			while (true)
+			{
+				SkipSpacesAndLine(CurrentBuffer);
+				if (isdigit(*CurrentBuffer))
+				{
+					int32 NodeIndex;
+					if (!ParseSignedInteger(CurrentBuffer, NodeIndex))
+						break;
+
+					if (NodeIndex >= Bones.Num())
+					{
+						UE_LOG(LogSMDImporter, Error, TEXT("Time NodeIndex out of range...."));
+						break;
+					}
+
+					FSMDBone& Bone = Bones[NodeIndex];
+
+					FSMDAnimation::LocationAndRotationKey LocationAndRotation;
+					ParseVector(CurrentBuffer, LocationAndRotation.Position);
+					ParseVector(CurrentBuffer, LocationAndRotation.Rot);
+				}
+				else
+				{
+					break;
+				}
 			}
 		}
 	}

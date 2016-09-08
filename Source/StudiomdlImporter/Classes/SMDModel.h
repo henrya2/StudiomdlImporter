@@ -38,23 +38,16 @@ struct FSMDAnimation
 		Keys.Reserve(20);
 	}
 
-	struct MatrixKey
+	struct LocationAndRotationKey
 	{
-		FMatrix Matrix;
-
-		FMatrix Absolute;
-
 		FVector Position;
 
 		FVector Rot;
-		//FRotator Rotation;
-
-		double dTime;
 	};
 
 	uint32 FirstTimeKey;
 
-	TArray<MatrixKey> Keys;
+	TArray<LocationAndRotationKey> Keys;
 };
 
 struct FSMDBone
@@ -94,6 +87,8 @@ protected:
 	void ParseFile();
 
 	void ParseNodes(const TCHAR*& CurrentBuffer);
+
+	void ParseSkeleton(const TCHAR*& CurrentBuffer);
 
 protected:
 	FString SMDContentString;
