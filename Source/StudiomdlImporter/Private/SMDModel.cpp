@@ -4,6 +4,7 @@
 #define TOKEN_VERSION TEXT("version")
 #define TOKEN_NODES TEXT("nodes")
 #define TOKEN_SKELETON TEXT("skeleton")
+#define TOKEN_TRIANGLES TEXT("triangles")
 #define TOKEN_TIME TEXT("time")
 #define TOKEN_END TEXT("end")
 
@@ -177,7 +178,7 @@ bool ParseSignedInteger(const TCHAR*& InOut, int32& OutVal)
 {
 	OutVal = FCString::Atoi(InOut);
 
-	AdvanceToNextSpaceOrLine(InOut);
+	SkipSpaces(InOut);
 
 	return true;
 }
@@ -186,7 +187,7 @@ bool ParseFloat(const TCHAR*& InOut, float& OutVal)
 {
 	OutVal = FCString::Atof(InOut);
 
-	AdvanceToNextSpaceOrLine(InOut);
+	SkipSpaces(InOut);
 
 	return true;
 }
@@ -196,6 +197,14 @@ bool ParseVector(const TCHAR*& InOut, FVector& OutVal)
 	ParseFloat(InOut, OutVal.X);
 	ParseFloat(InOut, OutVal.Y);
 	ParseFloat(InOut, OutVal.Z);
+
+	return true;
+}
+
+bool ParseVector2D(const TCHAR*& InOut, FVector2D& OutVal)
+{
+	ParseFloat(InOut, OutVal.X);
+	ParseFloat(InOut, OutVal.Y);
 
 	return true;
 }
@@ -305,6 +314,11 @@ void FSMDModel::ParseFile()
 		{
 			AdvanceToNextSpaceOrLine(CurrentBuffer);
 			ParseSkeleton(CurrentBuffer);
+		}
+		else if (MatchToken(CurrentBuffer, TOKEN_TRIANGLES))
+		{
+			AdvanceToNextSpaceOrLine(CurrentBuffer);
+			ParseTriangles(CurrentBuffer);
 		}
 		else
 		{
@@ -440,6 +454,80 @@ void FSMDModel::ParseSkeleton(const TCHAR*& CurrentBuffer)
 					break;
 				}
 			}
+		}
+	}
+}
+
+void FSMDModel::ParseTriangles(const TCHAR*& CurrentBuffer)
+{
+	while (true)
+	{
+		SkipSpacesAndLine(CurrentBuffer);
+		if (IsCommentLine(CurrentBuffer))
+		{
+			SkipToNextValidLine(CurrentBuffer);
+			continue;
+		}
+
+		if (IsEndOfContent(CurrentBuffer))
+		{
+			UE_LOG(LogSMDImporter, Error, TEXT("Unexpected end of file"));
+			break;
+		}
+
+		if (MatchToken(CurrentBuffer, TOKEN_END))
+		{
+			Advance(CurrentBuffer, TOKEN_END_SIZE);
+			break;
+		}
+
+		if (IsComment(CurrentBuffer))
+		{
+			AdvanceUntilChar(CurrentBuffer, TEXT('\n'));
+			continue;
+		}
+
+		{
+			const TCHAR* OldBufferPtr = CurrentBuffer;
+			AdvanceToNextSpaceOrLine(CurrentBuffer);
+
+			int32 CharsCount = (int32)(CurrentBuffer - OldBufferPtr);
+			FString MaterialName;
+			MaterialName.AppendChars(OldBufferPtr, CharsCount);
+
+			int32 MaterialIndex = MaterialNames.AddUnique(MaterialName);
+
+			FSMDFace NewFace;
+			NewFace.Material = MaterialIndex;
+
+			SkipSpacesAndLine(CurrentBuffer);
+
+			for (int32 i = 0; i < 3; ++i)
+			{
+				int32 ParentNode = 0;
+				ParseSignedInteger(CurrentBuffer, ParentNode);
+				ParseVector(CurrentBuffer, NewFace.Vertices[i].Position);
+				ParseVector(CurrentBuffer, NewFace.Vertices[i].Normal);
+				ParseVector2D(CurrentBuffer, NewFace.Vertices[i].UV);
+
+				int32 BoneWeightCount = 0;
+				if (*(CurrentBuffer) != TEXT('\n'))
+				{
+					ParseSignedInteger(CurrentBuffer, BoneWeightCount);
+				}
+
+				for (int32 j = 0; j < BoneWeightCount; ++j)
+				{
+					int32 NodeIndex = 0;
+					float Weight = 0;
+					ParseSignedInteger(CurrentBuffer, NodeIndex);
+					ParseFloat(CurrentBuffer, Weight);
+
+					NewFace.Vertices[i].BoneLinks.Add(TPairInitializer<int32, float>(NodeIndex, Weight));
+				}
+			}
+
+			Faces.Add(NewFace);
 		}
 	}
 }

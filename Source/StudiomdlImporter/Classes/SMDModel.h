@@ -12,9 +12,9 @@ struct FSMDVertex
 	FVector Normal;
 	FVector2D UV;
 
-	uint32 ParentNode;
+	int32 ParentNode;
 
-	TArray<TPair<uint32, float>> BoneLinks;
+	TArray<TPair<int32, float>> BoneLinks;
 };
 
 struct FSMDFace
@@ -25,7 +25,7 @@ struct FSMDFace
 
 	}
 
-	uint32 Material;
+	int32 Material;
 
 	FSMDVertex Vertices[3];
 };
@@ -45,7 +45,7 @@ struct FSMDAnimation
 		FVector Rot;
 	};
 
-	uint32 FirstTimeKey;
+	int32 FirstTimeKey;
 
 	TArray<LocationAndRotationKey> Keys;
 };
@@ -89,6 +89,8 @@ protected:
 	void ParseNodes(const TCHAR*& CurrentBuffer);
 
 	void ParseSkeleton(const TCHAR*& CurrentBuffer);
+
+	void ParseTriangles(const TCHAR*& CurrentBuffer);
 
 protected:
 	FString SMDContentString;
